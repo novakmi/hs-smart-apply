@@ -1,0 +1,15 @@
+env:
+  APP_ROOT: "$HOME/code/my-app"
+  NODE_ENV: ${NODE_ENV:-development}
+locals:
+  API_DIR: "$APP_ROOT/services/api"
+workspaces:
+  - name: api
+    root: "$API_DIR"
+    commands:
+      - echo "Launching API in $NODE_ENV mode"
+    tabs:
+      - label: server
+        panes:
+          - commands:
+              - npm run start

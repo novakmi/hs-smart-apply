@@ -1,0 +1,14 @@
+workspaces:
+  - name: backend
+    root: ~/code/backend
+    commands:
+      - echo "Preparing backend"
+    tabs:
+      - label: api
+        commands:
+          - echo "Starting API"
+        panes:
+          - commands:
+              - cargo run
+          - commands:
+              - cargo test

@@ -1,0 +1,7 @@
+workspaces:
+  - name: my-project
+    root: ~/code/my-project
+    tabs:
+      - label: editor
+        panes:
+          - command: nvim

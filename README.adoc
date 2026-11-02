@@ -1,0 +1,162 @@
+= hs-smart-apply
+:toc: macro
+:toc-placement!:
+:icons: font
+:source-highlighter: pygments
+:author: Michal Novak
+
+A smart preprocessor and wrapper for `herdr-spreader` YAML layouts. It expands
+environment variables and local variables, bubbles commands down through the
+workspace layout, and keeps repeated setup steps out of pane definitions.
+
+toc::[]
+
+== Features
+
+* *Hierarchical environment scoping*: inherit and override values with `env:`
+  blocks at supported layout levels.
+* *Global and hierarchical `locals:`*: define reusable values that can refer to
+  system environment variables, `env:` values, and earlier locals.
+* *Variable and path expansion*: expand `~`, `$NAME`, `${NAME}`, and
+  `${NAME:-default}` in layout strings.
+* *Command bubbling*: combine `commands:` lists from workspaces, tabs, and panes
+  into each pane's `command`, joined with `&&`.
+* *Preview options*: use `--print` to inspect expanded YAML or `--dry-run` to
+  print it without invoking `herdr-spreader`.
+
+== Installation
+
+Clone the project and install it with pip:
+
+[source,shell]
+----
+git clone https://github.com/novakmi/hs-smart-apply.git
+cd hs-smart-apply
+python -m pip install .
+----
+
+For development, install the checkout in editable mode so changes are used
+immediately:
+
+[source,shell]
+----
+python -m pip install -e .
+----
+
+You can also install directly from the repository:
+
+[source,shell]
+----
+python -m pip install git+https://github.com/novakmi/hs-smart-apply.git
+----
+
+Each method installs the `hs-smart-apply` executable into the active Python
+environment. Apply mode also requires `herdr-spreader` to be installed and
+available on `PATH`.
+
+== Usage and CLI options
+
+[source,shell]
+----
+hs-smart-apply layout.yaml
+----
+
+* `-h`, `--help`: show help and exit.
+* `-p`, `--print`: print the expanded YAML and exit.
+* `-d`, `--dry-run`: print the expanded YAML without running
+  `herdr-spreader apply`.
+
+From a project checkout, the CLI can also be launched as a Python module:
+
+[source,shell]
+----
+python -m hs_smart_apply --print layout.yaml
+----
+
+For a direct source checkout without installing the package, run from the
+project root:
+
+[source,shell]
+----
+python -m pip install PyYAML
+PYTHONPATH=src python -m hs_smart_apply --print layout.yaml
+----
+
+== Example layout
+
+This example uses process environment variables, global and workspace locals,
+command lists, and a container command. Complete examples are also in the
+link:examples/[`examples/` directory].
+
+[source,yaml]
+----
+env:
+  PROJECT_TAG: "v2.4"
+  USER_HOME: "${HOME}"
+
+locals:
+  base_dir: "${USER_HOME}/projects/my-company"
+  primary_container: "app-core-${PROJECT_TAG}"
+  default_shell: bash
+
+workspaces:
+  - name: Backend-Service
+    root: "${base_dir}/backend"
+    locals:
+      app_port: "8080"
+    tabs:
+      - label: Terminal & Container
+        panes:
+          - commands:
+              - "echo 'Starting service on port ${app_port}...'"
+              - "cargo watch -x run"
+            focus: true
+          - split: right
+            ratio: 0.4
+            commands:
+              - |
+                docker exec -it ${primary_container} ${default_shell} << 'EOF'
+                  cd /app
+                  echo "Inside container! Working dir: $(pwd)"
+                  exec bash
+                EOF
+----
+
+== Managing different herdr sessions
+
+`herdr-spreader` applies layouts to the active Herdr session. If you use
+multiple named sessions, you can add a helper function to your shell profile
+(`~/.bashrc` or `~/.zshrc`) to attach to a session and apply a layout:
+
+[source,shell]
+----
+hs-apply-to() {
+    local session="$1"
+    local layout="$2"
+
+    if [ -z "$session" ] || [ -z "$layout" ]; then
+        echo "Usage: hs-apply-to <session-name> <layout.yaml>"
+        return 1
+    fi
+
+    herdr session attach "$session"
+    hs-smart-apply "$layout"
+}
+----
+
+For example:
+
+[source,shell]
+----
+hs-apply-to backend-cluster layout.yaml
+hs-apply-to frontend-staging layout.yaml
+----
+
+== Contributing
+
+See link:CONTRIBUTING.md[CONTRIBUTING.md] for development setup, testing, and
+documentation instructions.
+
+== Author
+
+hs-smart-apply was created in 2026 by Michal Novak.

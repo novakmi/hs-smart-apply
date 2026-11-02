@@ -1,0 +1,14 @@
+workspaces:
+  - name: web-app
+    # Set PROJECT_ROOT in the shell before running hs-smart-apply.
+    root: $PROJECT_ROOT
+    env:
+      NODE_ENV: ${NODE_ENV:-development}
+    locals:
+      START_COMMAND: npm run dev
+    tabs:
+      - label: server
+        panes:
+          - commands:
+              - echo "Starting in $NODE_ENV mode"
+              - $START_COMMAND
