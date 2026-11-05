@@ -18,6 +18,7 @@ be installed and available on PATH.
 
 `--print` writes the expanded layout to stdout. `--dry-run` does the same
 without invoking `herdr-spreader apply`.
+Use `--version` to print the installed version.
 
 For debugging from the project root without installing the package, run:
 

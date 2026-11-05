@@ -262,3 +262,13 @@ def test_help_lists_supported_cli_options(capsys) -> None:
     output = capsys.readouterr().out
     assert "--print" in output
     assert "--dry-run" in output
+
+
+def test_version_option_prints_package_version(capsys) -> None:
+    from hs_smart_apply import __version__
+
+    with pytest.raises(SystemExit) as error:
+        main(["--version"])
+
+    assert error.value.code == 0
+    assert capsys.readouterr().out.strip() == f"hs-smart-apply {__version__}"

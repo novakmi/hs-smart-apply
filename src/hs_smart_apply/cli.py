@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from ._version import __version__
+
 
 _VARIABLE = re.compile(r"\$([a-zA-Z_]\w*)|\$\{\s*([a-zA-Z_]\w*)(?::?-([^}]*))?\s*\}")
 
@@ -96,8 +98,10 @@ def process_node(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="hs-smart-apply",
         description="Expand scoped variables and commands in a herdr-spreader YAML layout."
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("layout", type=Path, help="Path to the layout YAML file.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("-p", "--print", action="store_true", help="Print expanded YAML and exit.")

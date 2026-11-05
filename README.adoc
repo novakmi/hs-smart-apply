@@ -62,6 +62,7 @@ hs-smart-apply layout.yaml
 ----
 
 * `-h`, `--help`: show help and exit.
+* `--version`: print the installed version and exit.
 * `-p`, `--print`: print the expanded YAML and exit.
 * `-d`, `--dry-run`: print the expanded YAML without running
   `herdr-spreader apply`.
