@@ -1,3 +1,4 @@
+# Shared declarations are exported to each workspace's runtime environment.
 env:
   APP_ROOT: "$HOME/code/my-app"
   NODE_ENV: ${NODE_ENV:-development}

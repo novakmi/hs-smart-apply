@@ -33,13 +33,39 @@ and `${NAME:-default}` placeholders are expanded. `commands:` accepts a list of
 strings; commands inherited from ancestor nodes are joined with `&&` on each
 leaf pane.
 
+Top-level `env:` declarations are also copied into each generated workspace's
+`env:` mapping so they reach pane shells and the programs they start. Workspace
+declarations override shared values, including when an override is an empty
+string. No YAML anchors or merges are needed:
+
+```yaml
+env:
+  APP_ROOT: "$HOME/projects/app"
+  MODE: development
+workspaces:
+  - name: api
+    root: "$APP_ROOT"
+    env:
+      MODE: staging
+    tabs:
+      - panes:
+          - commands:
+              - printenv MODE
+```
+
+The generated workspace environment contains `APP_ROOT` and `MODE: staging`.
+Only variables declared in the layout are copied. Process environment variables
+remain available for expansion, and `locals:` remain expansion-only values.
+The top-level `env:` block is consumed because Spreader accepts environment
+declarations on workspaces rather than at the top level.
+
 Short complete layouts are available in the [`examples/`](../examples/)
 directory:
 
 - [`01-basic.yaml`](../examples/01-basic.yaml) — one workspace and editor pane.
 - [`02-scoped-variables.yaml`](../examples/02-scoped-variables.yaml) — shell environment variables, `env:`, and `locals:` expansion.
 - [`03-inherited-commands.yaml`](../examples/03-inherited-commands.yaml) — workspace and tab commands bubbled to panes.
-- [`04-global-scope.yaml`](../examples/04-global-scope.yaml) — top-level `env:` and `locals:` expanded into workspace values and workspace commands.
+- [`04-global-scope.yaml`](../examples/04-global-scope.yaml) — shared `env:` exported to workspaces, with `locals:` and command expansion.
 
 For example, preview the second layout with values from your shell environment:
 

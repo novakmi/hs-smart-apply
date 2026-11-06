@@ -15,6 +15,9 @@ toc::[]
 
 * *Hierarchical environment scoping*: inherit and override values with `env:`
   blocks at supported layout levels.
+* *Shared runtime environment*: top-level `env:` declarations are automatically
+  copied into every workspace's environment. Workspace values override shared
+  values, without YAML anchors or merges.
 * *Global and hierarchical `locals:`*: define reusable values that can refer to
   system environment variables, `env:` values, and earlier locals.
 * *Variable and path expansion*: expand `~`, `$NAME`, `${NAME}`, and
@@ -84,6 +87,13 @@ PYTHONPATH=src python -m hs_smart_apply --print layout.yaml
 ----
 
 == Example layout
+
+Top-level `env:` values are available both for expansion and in the generated
+workspace environments, so programs launched in pane shells inherit them.
+Only variables declared in the layout are copied; the preprocessor's process
+environment remains available for expansion without being copied wholesale.
+`locals:` values are used only for expansion. The top-level `env:` block itself
+is removed from the generated YAML because Spreader expects it on workspaces.
 
 This example uses process environment variables, global and workspace locals,
 command lists, and a container command. Complete examples are also in the

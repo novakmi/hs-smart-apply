@@ -15,7 +15,6 @@ import yaml
 
 from ._version import __version__
 
-
 _VARIABLE = re.compile(r"\$([a-zA-Z_]\w*)|\$\{\s*([a-zA-Z_]\w*)(?::?-([^}]*))?\s*\}")
 
 
@@ -59,7 +58,7 @@ def process_node(
     *,
     is_root: bool = True,
 ) -> Any:
-    """Expand scopes and bubble ``commands`` values to leaf panes."""
+    """Expand scopes, export shared env to workspaces, and bubble commands to panes."""
     commands = list(parent_commands or [])
     if isinstance(node, list):
         return [process_node(item, parent_env, parent_locals, commands, is_root=False) for item in node]
@@ -90,6 +89,13 @@ def process_node(
             result[key] = {k: expand_str(v, scope) for k, v in value.items()}
         else:
             result[key] = process_node(value, env, locals_, commands, is_root=False)
+            if is_root and key == "workspaces" and isinstance(result[key], list) and isinstance(raw_env, dict):
+                # Export layout declarations, not the entire process environment.
+                # Workspace declarations were already expanded in their own scope.
+                shared_env = {name: env[name] for name in raw_env}
+                for workspace in result[key]:
+                    if isinstance(workspace, dict):
+                        workspace["env"] = {**shared_env, **workspace.get("env", {})}
 
     if not any(key in node for key in ("panes", "tabs", "workspaces")) and commands:
         result["command"] = " && ".join(commands)
@@ -98,8 +104,7 @@ def process_node(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="hs-smart-apply",
-        description="Expand scoped variables and commands in a herdr-spreader YAML layout."
+        prog="hs-smart-apply", description="Expand scoped variables and commands in a herdr-spreader YAML layout."
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("layout", type=Path, help="Path to the layout YAML file.")
