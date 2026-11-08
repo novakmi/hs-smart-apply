@@ -19,13 +19,18 @@ toc::[]
   copied into every workspace's environment. Workspace values override shared
   values, without YAML anchors or merges.
 * *Global and hierarchical `locals:`*: define reusable values that can refer to
-  system environment variables, `env:` values, and earlier locals.
+  other `env:` and `locals:` values of the same node or inherited from parent
+  nodes, in any declaration order.
   `env:` and `locals:` blocks are evaluated in YAML order; place `locals:` first
   to reuse those values in `env:` as well as commands.
 * *Variable and path expansion*: expand `~`, `$NAME`, `${NAME}`, and
-  `${NAME:-default}` in layout strings.
+  `${NAME:-default}` in layout strings — but only for variables declared in the
+  layout; untouched shell variables like `$HOME` keep working at runtime.
 * *Command bubbling*: combine `commands:` lists from workspaces, tabs, and panes
   into each pane's `command`, joined with `&&`.
+* *Container panes*: declare `container:` on a pane (or inherit it like `env:`)
+  to run its commands inside an `lxc`, `docker`, or `podman` container and end
+  in an interactive shell there.
 * *Preview options*: use `--print` to inspect expanded YAML or `--dry-run` to
   print it without invoking `herdr-spreader`.
 
@@ -90,49 +95,45 @@ PYTHONPATH=src python -m hs_smart_apply --print layout.yaml
 
 == Example layout
 
-Top-level `env:` values are available both for expansion and in the generated
-workspace environments, so programs launched in pane shells inherit them.
-Only variables declared in the layout are copied; the preprocessor's process
-environment remains available for expansion without being copied wholesale.
-`locals:` values are used only for expansion. The top-level `env:` block itself
+Only variables declared in the layout (`env:` and `locals:`) are expanded.
+`$NAME` references the layout does not declare are left untouched, so normal
+shell variables such as `$HOME` keep working wherever the command finally runs.
+Within a node, `env:` and `locals:` may reference each other and later keys of
+the same blocks — both are resolved against that node's complete declared
+scope, regardless of declaration order. `locals:` values are used only for
+expansion. The top-level `env:` block itself
 is removed from the generated YAML because Spreader expects it on workspaces.
 
-This example uses process environment variables, global and workspace locals,
-command lists, and a container command. Complete examples are also in the
-link:examples/[`examples/` directory].
+This example uses global scope, workspace locals, command bubbling, and a
+`container:` declaration that sends the pane's commands into a docker
+container and leaves an interactive shell running there. Complete examples are
+also in the link:examples/[`examples/` directory].
 
 [source,yaml]
 ----
 env:
   PROJECT_TAG: "v2.4"
-  USER_HOME: "${HOME}"
+  APP_ROOT: "~/projects/my-company"
 
 locals:
-  base_dir: "${USER_HOME}/projects/my-company"
   primary_container: "app-core-${PROJECT_TAG}"
-  default_shell: bash
 
 workspaces:
   - name: Backend-Service
-    root: "${base_dir}/backend"
-    locals:
-      app_port: "8080"
+    root: "$APP_ROOT/backend"
     tabs:
       - label: Terminal & Container
         panes:
           - commands:
-              - "echo 'Starting service on port ${app_port}...'"
+              - "echo 'Starting service...'"
               - "cargo watch -x run"
             focus: true
           - split: right
             ratio: 0.4
+            container: docker@$primary_container
             commands:
-              - |
-                docker exec -it ${primary_container} ${default_shell} << 'EOF'
-                  cd /app
-                  echo "Inside container! Working dir: $(pwd)"
-                  exec bash
-                EOF
+              - "cd /app"
+              - "echo \"Inside container! Working dir: $(pwd)\""
 ----
 
 == Managing different herdr sessions

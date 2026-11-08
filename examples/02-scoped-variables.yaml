@@ -1,9 +1,10 @@
+# Values are declared in the layout; the process environment is not consulted.
 workspaces:
   - name: web-app
-    # Set PROJECT_ROOT in the shell before running hs-smart-apply.
-    root: $PROJECT_ROOT
     env:
+      PROJECT_ROOT: "~/code/my-company/web-app"
       NODE_ENV: ${NODE_ENV:-development}
+    root: "$PROJECT_ROOT"
     locals:
       START_COMMAND: npm run dev
     tabs:

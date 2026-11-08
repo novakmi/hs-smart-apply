@@ -1,6 +1,6 @@
 """Pytest coverage for layout expansion and the command line interface."""
 
-import os
+import shlex
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -275,14 +275,12 @@ def test_multiline_heredoc_command_is_preserved_and_expanded() -> None:
     )
 
 
-def test_all_example_layouts_process_and_remove_preprocessor_keys(monkeypatch) -> None:
+def test_all_example_layouts_process_and_remove_preprocessor_keys() -> None:
     examples_dir = Path(__file__).parents[1] / "examples"
-    monkeypatch.setenv("PROJECT_ROOT", "/tmp/web-app")
-    monkeypatch.setenv("NODE_ENV", "test")
 
     for example in sorted(examples_dir.glob("*.yaml")):
         raw_layout = yaml.safe_load(example.read_text(encoding="utf-8"))
-        expanded = process_node(raw_layout, dict(os.environ), {})
+        expanded = process_node(raw_layout, {}, {})
 
         assert "workspaces" in expanded, example.name
         assert "env" not in expanded, example.name
@@ -291,6 +289,7 @@ def test_all_example_layouts_process_and_remove_preprocessor_keys(monkeypatch) -
             if isinstance(value, dict):
                 assert "locals" not in value, example_name
                 assert "commands" not in value, example_name
+                assert "container" not in value, example_name
                 for child in value.values():
                     assert_no_preprocessor_keys(child)
             elif isinstance(value, list):
@@ -313,8 +312,7 @@ def test_print_mode_expands_yaml(tmp_path, capsys) -> None:
     assert "echo world" in capsys.readouterr().out
 
 
-def test_print_mode_exports_shared_environment_to_workspaces(tmp_path, capsys, monkeypatch) -> None:
-    monkeypatch.setenv("PROCESS_ONLY", "private")
+def test_print_mode_exports_shared_environment_to_workspaces(tmp_path, capsys) -> None:
     layout = write_layout(
         tmp_path,
         "env:\n  MODE: shared\nworkspaces:\n  - name: api\n    env:\n      MODE: api\n  - name: worker\n",
@@ -407,3 +405,145 @@ def test_version_option_prints_package_version(capsys) -> None:
 
     assert error.value.code == 0
     assert capsys.readouterr().out.strip() == f"hs-smart-apply {__version__}"
+
+
+def test_env_and_locals_resolve_in_any_order_within_a_node() -> None:
+    layout = {
+        "workspaces": [
+            {
+                "env": {"MODE": "$APP"},
+                "locals": {"APP": "editor"},
+                "tabs": [
+                    {
+                        "env": {"FOO": "$BAR", "BAR": "x"},
+                        "panes": [{"commands": ["echo $MODE,$FOO"]}],
+                    }
+                ],
+            }
+        ]
+    }
+
+    result = process_node(layout, {}, {})
+
+    workspace = result["workspaces"][0]
+    assert workspace["env"] == {"MODE": "editor"}
+    assert workspace["tabs"][0]["env"] == {"FOO": "x", "BAR": "x"}
+    assert workspace["tabs"][0]["panes"][0]["command"] == "echo editor,x"
+
+
+def test_undeclared_process_environment_is_not_expanded(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setenv("SMART_PROCESS_ONLY", "from-shell")
+    layout = write_layout(tmp_path, "panes:\n  - commands:\n      - echo $SMART_PROCESS_ONLY\n")
+
+    assert main(["--print", str(layout)]) == 0
+    assert "echo $SMART_PROCESS_ONLY" in capsys.readouterr().out
+
+    result = process_node({"panes": [{"commands": ["echo $SMART_PROCESS_ONLY"]}]}, {}, {})
+
+    assert result["panes"][0]["command"] == "echo $SMART_PROCESS_ONLY"
+
+
+def test_container_declaration_wraps_pane_commands() -> None:
+    layout = {
+        "workspaces": [
+            {
+                "name": "web",
+                "container": "docker@web",
+                "env": {"MSG": "hi"},
+                "commands": ["echo $MSG"],
+                "tabs": [{"panes": [{"commands": ["run"]}]}],
+            }
+        ]
+    }
+
+    result = process_node(layout, {}, {})
+
+    workspace = result["workspaces"][0]
+    pane = workspace["tabs"][0]["panes"][0]
+    rc = (
+        "trap 'rm -f /tmp/.hs-smart-apply.rc' EXIT\n"
+        'source "$HOME/.bashrc" 2>/dev/null || true\n'
+        "export MSG=hi\n"
+        "echo hi &&\n"
+        "run\n"
+    )
+    script = (
+        f"cat > /tmp/.hs-smart-apply.rc << 'HS_SMART_APPLY_RC'\n{rc}"
+        "HS_SMART_APPLY_RC\nexec bash --rcfile /tmp/.hs-smart-apply.rc"
+    )
+
+    assert pane["command"] == f"docker exec -it web bash -c {shlex.quote(script)}"
+    assert "container" not in workspace
+
+
+@pytest.mark.parametrize(
+    ("ctype", "prefix"),
+    [
+        ("lxc", "lxc exec node1"),
+        ("docker", "docker exec -it node1"),
+        ("podman", "podman exec -it node1"),
+    ],
+)
+def test_container_type_maps_to_exec_prefix(ctype, prefix) -> None:
+    result = process_node({"container": ctype, "panes": [{"name": "node1", "commands": ["echo hi"]}]}, {}, {})
+
+    assert result["panes"][0]["command"].startswith(f"{prefix} bash -c ")
+
+
+def test_container_without_commands_opens_interactive_shell() -> None:
+    result = process_node({"container": "lxc@db", "panes": [{}]}, {}, {})
+
+    assert result["panes"][0]["command"] == "lxc exec db bash"
+
+
+def test_container_names_fall_back_to_nearest_ancestor_label() -> None:
+    layout = {"tabs": [{"label": "server", "container": "podman", "panes": [{"commands": ["run"]}]}]}
+
+    result = process_node(layout, {}, {})
+
+    command = result["tabs"][0]["panes"][0]["command"]
+    assert command.startswith("podman exec -it server bash -c ")
+    assert "run\n" in command
+
+
+def test_container_mapping_places_user_and_workdir_in_container() -> None:
+    layout = {
+        "container": {"type": "docker", "name": "cache", "user": "postgres", "workdir": "/data"},
+        "panes": [{"commands": ["redis-cli ping"]}],
+    }
+
+    result = process_node(layout, {}, {})
+
+    command = result["panes"][0]["command"]
+    assert command.startswith("docker exec -it --user postgres cache bash -c ")
+    assert "cd /data\n" in command
+    assert "redis-cli ping\n" in command
+
+
+def test_container_workdir_without_commands_runs_interactive_shell_there() -> None:
+    layout = {"container": {"type": "podman", "name": "db", "workdir": "/var/lib/db"}, "panes": [{"name": "db"}]}
+
+    result = process_node(layout, {}, {})
+
+    assert result["panes"][0]["command"] == "podman exec -it db bash -c 'cd /var/lib/db; exec bash'"
+
+
+def test_missing_container_name_reports_error(tmp_path, capsys) -> None:
+    layout = write_layout(tmp_path, "container: docker\npanes:\n  - {}\n")
+
+    assert main(["--print", str(layout)]) == 1
+    assert "no container name resolved" in capsys.readouterr().err
+
+
+def test_unknown_container_type_reports_error(tmp_path, capsys) -> None:
+    layout = write_layout(tmp_path, "container: dockerx\npanes: []\n")
+
+    assert main(["--print", str(layout)]) == 1
+    assert "dockerx" in capsys.readouterr().err
+
+
+def test_container_user_is_rejected_for_lxc(tmp_path, capsys) -> None:
+    layout = write_layout(tmp_path, "container: {type: lxc, name: db, user: postgres}\npanes:\n  - {}\n")
+
+    assert main(["--print", str(layout)]) == 1
+    assert "user" in capsys.readouterr().err

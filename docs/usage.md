@@ -27,11 +27,19 @@ python -m pip install PyYAML
 PYTHONPATH=src python -m hs_smart_apply --print layout.yaml
 ```
 
-Layout nodes may define `env:` and `locals:` mappings. Child nodes inherit those
-values, and locals in each mapping are evaluated in order. `$NAME`, `${NAME}`,
-and `${NAME:-default}` placeholders are expanded. `commands:` accepts a list of
-strings; commands inherited from ancestor nodes are joined with `&&` on each
-leaf pane.
+Layout nodes may define `env:` and `locals:` mappings, and child nodes inherit
+those values. `$NAME`, `${NAME}`, and `${NAME:-default}` placeholders are
+expanded, but only against variables declared in the layout — references that
+no declaration defines stay literal so shell variables such as `$HOME` keep
+working at runtime. Within one node, `env:` and `locals:` declarations may
+reference each other, and later keys of the same blocks; both are resolved
+against the node's complete declared scope (its own plus inherited values),
+regardless of declaration order. References that no declaration defines remain
+literal, and self-referential cycles are not resolved. `locals:` values are
+expansion-only and never exported. `commands:` accepts a list of strings;
+commands inherited from ancestor nodes are joined with `&&` on each leaf pane.
+Quote entries that contain `"label: value"`-shaped text (`'echo "tag: v2"'`),
+otherwise YAML parses them as mappings and they are ignored.
 
 `locals:` and `env:` blocks are evaluated in the order they appear in YAML,
 as are entries within each block. Put `locals:` before `env:` to reuse local
@@ -74,21 +82,35 @@ workspaces:
 ```
 
 The generated workspace environment contains `APP_ROOT` and `MODE: staging`.
-Only variables declared in the layout are copied. Process environment variables
-remain available for expansion, and `locals:` remain expansion-only values.
-The top-level `env:` block is consumed because Spreader accepts environment
-declarations on workspaces rather than at the top level.
+Only variables declared in the layout are copied and expanded. A `$NAME`
+reference the layout does not declare keeps its literal text, so shell
+variables such as `$HOME` keep working at runtime, and `locals:` remain
+expansion-only values. The top-level `env:` block is consumed because Spreader
+accepts environment declarations on workspaces rather than at the top level.
+
+Layout nodes may also declare `container:` to run their commands inside a
+container. Allowed types are `lxc`, `docker`, and `podman`; the declaration
+inherits to child panes like an `env:` block, with the nearest declaration
+winning. After the pane's commands finish, an interactive shell keeps running
+inside the container. Use `container: docker@name` or a
+`container: {type: ..., name: ..., user: ..., workdir: ...}` mapping to
+address a specific instance; without an explicit name, the nearest `name` or
+`label` in the layout is used. It is an error to resolve no name. The wrapper
+assumes the pane shell provides a terminal.
 
 Short complete layouts are available in the [`examples/`](../examples/)
 directory:
 
 - [`01-basic.yaml`](../examples/01-basic.yaml) — one workspace and editor pane.
-- [`02-scoped-variables.yaml`](../examples/02-scoped-variables.yaml) — shell environment variables, `env:`, and `locals:` expansion.
+- [`02-scoped-variables.yaml`](../examples/02-scoped-variables.yaml) — `env:`, and `locals:` expansion.
 - [`03-inherited-commands.yaml`](../examples/03-inherited-commands.yaml) — workspace and tab commands bubbled to panes.
 - [`04-global-scope.yaml`](../examples/04-global-scope.yaml) — shared `env:` exported to workspaces, with `locals:` and command expansion.
+- [`05-container.yaml`](../examples/05-container.yaml) — pane commands running in a docker container.
+- [`06-lxc.yaml`](../examples/06-lxc.yaml) — panes running inside LXC containers, with per-tab re-declaration.
+- [`07-podman.yaml`](../examples/07-podman.yaml) — panes running inside podman containers via the full mapping form (`user:`/`workdir:`).
 
-For example, preview the second layout with values from your shell environment:
+Preview the second layout with:
 
 ```sh
-PROJECT_ROOT="$PWD" NODE_ENV=staging hs-smart-apply --print examples/02-scoped-variables.yaml
+hs-smart-apply --print examples/02-scoped-variables.yaml
 ```

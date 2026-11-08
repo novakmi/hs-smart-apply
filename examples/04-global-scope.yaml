@@ -1,6 +1,6 @@
 # Shared declarations are exported to each workspace's runtime environment.
 env:
-  APP_ROOT: "$HOME/code/my-app"
+  APP_ROOT: "~/code/my-app"
   NODE_ENV: ${NODE_ENV:-development}
 locals:
   API_DIR: "$APP_ROOT/services/api"

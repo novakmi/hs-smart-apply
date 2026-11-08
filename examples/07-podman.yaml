@@ -1,0 +1,21 @@
+# Podman containers: same wrapper as docker. The full mapping form adds
+# `user:` and `workdir:`, which is applied to every pane of the workspace.
+env:
+  DEPLOY_TAG: "8443"
+workspaces:
+  - name: frontend
+    container:
+      type: podman
+      name: "web-${DEPLOY_TAG}"
+      workdir: /srv/web
+    tabs:
+      - label: server
+        commands:
+          - npm run start
+        panes:
+          - {}
+      - label: logs
+        container: "podman@web-${DEPLOY_TAG}"
+        panes:
+          - commands:
+              - tail -f /tmp/app.log
