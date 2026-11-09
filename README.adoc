@@ -20,6 +20,8 @@ toc::[]
   values, without YAML anchors or merges.
 * *Global and hierarchical `locals:`*: define reusable values that can refer to
   system environment variables, `env:` values, and earlier locals.
+  `env:` and `locals:` blocks are evaluated in YAML order; place `locals:` first
+  to reuse those values in `env:` as well as commands.
 * *Variable and path expansion*: expand `~`, `$NAME`, `${NAME}`, and
   `${NAME:-default}` in layout strings.
 * *Command bubbling*: combine `commands:` lists from workspaces, tabs, and panes

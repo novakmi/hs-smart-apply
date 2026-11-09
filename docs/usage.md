@@ -33,6 +33,26 @@ and `${NAME:-default}` placeholders are expanded. `commands:` accepts a list of
 strings; commands inherited from ancestor nodes are joined with `&&` on each
 leaf pane.
 
+`locals:` and `env:` blocks are evaluated in the order they appear in YAML,
+as are entries within each block. Put `locals:` before `env:` to reuse local
+values in environment declarations and commands. Put `env:` first when locals
+need values declared by that environment block. Parent scope values are
+available to both blocks. Declare dependencies before the values that use them.
+
+```yaml
+locals:
+  project_path: projects/app
+env:
+  APP_ROOT: "${HOME}/${project_path}"
+workspaces:
+  - name: api
+    root: "$APP_ROOT"
+    tabs:
+      - panes:
+          - commands:
+              - echo "Project path is ${project_path}"
+```
+
 Top-level `env:` declarations are also copied into each generated workspace's
 `env:` mapping so they reach pane shells and the programs they start. Workspace
 declarations override shared values, including when an override is an empty

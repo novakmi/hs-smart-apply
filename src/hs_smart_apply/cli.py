@@ -28,10 +28,10 @@ def expand_str(value: Any, scope: dict[str, Any]) -> Any:
         name = match.group(1) or match.group(2)
         default = match.group(3)
         current = scope.get(name)
-        if current is not None and current != "":
-            return str(current)
-        if default is not None:
+        if default is not None and (current is None or current == ""):
             return default
+        if current is not None:
+            return str(current)
         return match.group(0)
 
     return _VARIABLE.sub(replace, value)
@@ -68,15 +68,14 @@ def process_node(
     env = parent_env.copy()
     locals_ = parent_locals.copy()
     raw_env = node.get("env")
-    if isinstance(raw_env, dict):
-        for key, value in raw_env.items():
-            env[key] = expand_str(value, {**env, **locals_})
-
-    raw_locals = node.get("locals")
-    if isinstance(raw_locals, dict):
-        # Evaluate in insertion order so later locals can refer to earlier ones.
-        for key, value in raw_locals.items():
-            locals_[key] = expand_str(value, {**env, **locals_})
+    # Follow YAML order for both blocks and entries, so either block can use
+    # values from the other when that block is declared first.
+    for section, values in node.items():
+        if section not in ("env", "locals") or not isinstance(values, dict):
+            continue
+        target = env if section == "env" else locals_
+        for key, value in values.items():
+            target[key] = expand_str(value, {**env, **locals_})
 
     scope = {**env, **locals_}
     commands.extend(_node_commands(node, scope))

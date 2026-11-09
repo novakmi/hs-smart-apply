@@ -15,6 +15,10 @@ from hs_smart_apply.cli import expand_str, main, process_node
     [
         ("$USER", {"USER": "michal"}, "michal"),
         ("${USER}", {"USER": "michal"}, "michal"),
+        ("$USER", {"USER": ""}, ""),
+        ("${USER}", {"USER": ""}, ""),
+        ("venv${VENV_SUFFIX}", {"VENV_SUFFIX": ""}, "venv"),
+        ("venv${VENV_SUFFIX}", {"VENV_SUFFIX": "-dev"}, "venv-dev"),
         ("${USER:-guest}", {}, "guest"),
         ("${USER:-guest}", {"USER": ""}, "guest"),
         ("${USER:-guest}", {"USER": "michal"}, "michal"),
@@ -40,6 +44,80 @@ def test_locals_evaluate_in_order_and_inherit_parent_scope() -> None:
     result = process_node(layout, {"HOME": "/home/user"}, {})
 
     assert result["panes"][0]["command"] == "echo /home/user/work/project"
+
+
+@pytest.mark.parametrize("suffix", [None, "", "-dev"])
+def test_virtualenv_suffix_does_not_leave_placeholders_in_workspace_environment(suffix) -> None:
+    environment = {"HOME": "/home/tester"}
+    if suffix is not None:
+        environment["VENV_SUFFIX"] = suffix
+    layout = {
+        "locals": {
+            "venv_suffix": "${VENV_SUFFIX:-}",
+            "venv_path": "vol/cn/tailf/venv-pool/venv${venv_suffix}",
+        },
+        "env": {"VENV_SUFFIX": "${venv_suffix}", "VENV_DIR": "${HOME}/${venv_path}"},
+        "workspaces": [{"tabs": [{"panes": [{"commands": ['source "${VENV_DIR}/sysval/bin/activate"']}]}]}],
+    }
+
+    result = process_node(layout, environment, {})
+
+    workspace = result["workspaces"][0]
+    expected_dir = "/home/tester/vol/cn/tailf/venv-pool/venv" + (suffix or "")
+    assert workspace["env"] == {"VENV_SUFFIX": suffix or "", "VENV_DIR": expected_dir}
+    assert workspace["tabs"][0]["panes"][0]["command"] == f'source "{expected_dir}/sysval/bin/activate"'
+
+
+def test_locals_before_env_are_reused_in_workspace_environment_and_pane_commands() -> None:
+    layout = yaml.safe_load("""
+locals:
+  relative_root: projects/app
+  api_path: ${relative_root}/api
+env:
+  APP_ROOT: ${HOME}/${relative_root}
+  API_DIR: ${HOME}/${api_path}
+workspaces:
+  - name: api
+    locals:
+      log_path: ${api_path}/logs
+    env:
+      LOG_DIR: ${HOME}/${log_path}
+    tabs:
+      - panes:
+          - commands:
+              - echo ${API_DIR} ${api_path} ${LOG_DIR}
+""")
+
+    result = process_node(layout, {"HOME": "/home/tester"}, {})
+
+    workspace = result["workspaces"][0]
+    assert workspace["env"] == {
+        "APP_ROOT": "/home/tester/projects/app",
+        "API_DIR": "/home/tester/projects/app/api",
+        "LOG_DIR": "/home/tester/projects/app/api/logs",
+    }
+    assert workspace["tabs"][0]["panes"][0]["command"] == (
+        "echo /home/tester/projects/app/api projects/app/api /home/tester/projects/app/api/logs"
+    )
+    assert "locals" not in workspace
+    assert "env" not in result
+
+
+def test_locals_before_env_use_the_parent_environment_before_the_child_override() -> None:
+    layout = {
+        "env": {"MODE": "shared"},
+        "workspaces": [
+            {
+                "locals": {"inherited_mode": "$MODE"},
+                "env": {"MODE": "workspace", "INHERITED_MODE": "$inherited_mode"},
+            }
+        ],
+    }
+
+    assert process_node(layout, {}, {})["workspaces"][0]["env"] == {
+        "MODE": "workspace",
+        "INHERITED_MODE": "shared",
+    }
 
 
 def test_top_level_env_and_locals_expand_workspaces_and_are_consumed() -> None:
