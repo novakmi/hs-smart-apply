@@ -86,6 +86,7 @@ def _resolve_locals(raw_locals: Any, parent_locals: dict[str, Any], where: str) 
         resolving.append(name)
         value = raw_locals[name]
         if isinstance(value, str):
+
             def replace(match: re.Match[str]) -> str:
                 ref = match.group(1) or match.group(2)
                 default = match.group(3)
@@ -235,10 +236,7 @@ def _container_prefix(spec: dict[str, str | None], name: str, where: str) -> str
         if ctype == "lxc":
             # LXD starts exec as root by default; use sudo to select the user
             # while retaining the wrapper's environment and shell setup.
-            return (
-                f"lxc exec {shlex.quote(name)} -- sudo --user {shlex.quote(user)} "
-                "--set-home --"
-            )
+            return f"lxc exec {shlex.quote(name)} -- sudo --user {shlex.quote(user)} --set-home --"
         return f"{ctype} exec -it --user {shlex.quote(user)} {shlex.quote(name)}"
     if ctype == "lxc":
         return f"lxc exec {shlex.quote(name)} --"
@@ -408,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with args.layout.open(encoding="utf-8") as layout_file:
             data = yaml.safe_load(layout_file)
-        expanded = process_node(data, os.environ, {})
+        expanded = process_node(data, dict(os.environ), {})
     except (OSError, yaml.YAMLError, ValueError) as exc:
         print(f"hs-smart-apply: {exc}", file=sys.stderr)
         return 1

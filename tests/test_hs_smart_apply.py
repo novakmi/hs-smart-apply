@@ -48,7 +48,10 @@ def test_locals_evaluate_in_order_and_inherit_parent_scope() -> None:
 
 def test_locals_resolve_recursively_and_reject_cycles() -> None:
     result = process_node(
-        {"locals": {"root": "/work", "src": "${root}/src", "test": "${src}/test"}, "panes": [{"commands": ["cd ${test}"]}]},
+        {
+            "locals": {"root": "/work", "src": "${root}/src", "test": "${src}/test"},
+            "panes": [{"commands": ["cd ${test}"]}],
+        },
         {},
         {},
     )
@@ -124,9 +127,7 @@ def test_env_and_locals_remain_separate_scopes() -> None:
         ],
     }
 
-    result = process_node(
-        {**layout, "workspaces": [{**layout["workspaces"][0], "tabs": [{"panes": [{}]}]}]}, {}, {}
-    )
+    result = process_node({**layout, "workspaces": [{**layout["workspaces"][0], "tabs": [{"panes": [{}]}]}]}, {}, {})
     command = result["workspaces"][0]["tabs"][0]["panes"][0]["command"]
     assert command == 'export MODE="shared" && export MODE="workspace" && export INHERITED_MODE="$inherited_mode"'
 
@@ -150,9 +151,7 @@ def test_env_shell_exports_preserve_runtime_refs_and_locals_expand() -> None:
     pane = result["workspaces"][0]["tabs"][0]["panes"][0]
     assert result["workspaces"][0]["root"] == "/home/user/app/api"
     assert "env" not in result["workspaces"][0]
-    assert pane["command"] == (
-        'export APP_ROOT="$HOME/app" && export MODE="test" && echo $MODE && run'
-    )
+    assert pane["command"] == ('export APP_ROOT="$HOME/app" && export MODE="test" && echo $MODE && run')
 
 
 def test_shared_environment_exports_into_panes_without_leaking_process_env_or_locals() -> None:
@@ -194,8 +193,7 @@ def test_env_references_expand_recursively_and_report_cycles() -> None:
     )
     command = result["workspaces"][0]["tabs"][0]["panes"][0]["command"]
     assert command == (
-        'export ROOT="${HOME}/project" && export APP="${HOME}/project/app" && '
-        'export CACHE="${HOME}/project/app/cache"'
+        'export ROOT="${HOME}/project" && export APP="${HOME}/project/app" && export CACHE="${HOME}/project/app/cache"'
     )
 
     with pytest.raises(ValueError, match=r"environment variable cycle.*A -> B -> A"):
@@ -276,8 +274,7 @@ def test_environment_values_inherit_and_override_across_layout_levels() -> None:
     pane = tab["panes"][0]
     assert "env" not in workspace and "env" not in tab and "env" not in pane
     assert pane["command"] == (
-        'export APP_MODE="workspace" && export APP_MODE="tab" && '
-        'export APP_MODE="pane" && echo $APP_MODE'
+        'export APP_MODE="workspace" && export APP_MODE="tab" && export APP_MODE="pane" && echo $APP_MODE'
     )
 
 
@@ -303,12 +300,9 @@ def test_environment_exports_are_bubbled_to_every_pane() -> None:
     result = process_node(layout, {"HOME": "/home/tester"}, {})
     panes = result["workspaces"][0]["tabs"][0]["panes"]
 
-    assert panes[0]["command"] == (
-        'export ROOT="${HOME}/project" && export MODE="workspace" && export TAB_VALUE="tab"'
-    )
+    assert panes[0]["command"] == ('export ROOT="${HOME}/project" && export MODE="workspace" && export TAB_VALUE="tab"')
     assert panes[1]["command"] == (
-        'export ROOT="${HOME}/project" && export MODE="workspace" && export TAB_VALUE="tab" && '
-        'export PANE_VALUE="pane"'
+        'export ROOT="${HOME}/project" && export MODE="workspace" && export TAB_VALUE="tab" && export PANE_VALUE="pane"'
     )
 
 
@@ -421,8 +415,7 @@ def test_commands_after_clear_inherit_and_run_even_when_clear_is_disabled() -> N
     pane = process_node(layout, {}, {})["workspaces"][0]["tabs"][0]["panes"][0]
 
     assert pane["command"] == (
-        "setup && echo workspace ready && echo workspace message && "
-        "echo tab message && echo pane message"
+        "setup && echo workspace ready && echo workspace message && echo tab message && echo pane message"
     )
     assert "commands_after_clear" not in pane
 
@@ -437,10 +430,7 @@ def test_commands_after_clear_runs_after_clear_in_container() -> None:
     }
 
     pane = process_node(layout, {}, {})["panes"][0]
-    script = (
-        'source "$HOME/.bashrc" 2>/dev/null || true\n'
-        "setup\nclear\necho container ready\nexec bash -i"
-    )
+    script = 'source "$HOME/.bashrc" 2>/dev/null || true\nsetup\nclear\necho container ready\nexec bash -i'
 
     assert pane["command"] == f"lxc exec db -- bash -c {shlex.quote(script)}"
 
@@ -513,8 +503,7 @@ def test_print_mode_preserves_host_shell_refs_in_env_exports(tmp_path, capsys, m
     output = yaml.safe_load(capsys.readouterr().out)
     command = output["workspaces"][0]["panes"][0]["command"]
     assert command == (
-        'export ROOT="${HOME}/project" && export APP="${HOME}/project/app" && '
-        'export CACHE="${HOME}/project/app/cache"'
+        'export ROOT="${HOME}/project" && export APP="${HOME}/project/app" && export CACHE="${HOME}/project/app/cache"'
     )
 
 
@@ -689,13 +678,7 @@ def test_container_declaration_wraps_pane_commands() -> None:
 
     workspace = result["workspaces"][0]
     pane = workspace["tabs"][0]["panes"][0]
-    script = (
-        'source "$HOME/.bashrc" 2>/dev/null || true\n'
-        'export MSG="hi"\n'
-        "echo $MSG\n"
-        "run\n"
-        "exec bash -i"
-    )
+    script = 'source "$HOME/.bashrc" 2>/dev/null || true\nexport MSG="hi"\necho $MSG\nrun\nexec bash -i'
 
     assert pane["command"] == f"docker exec -it web bash -c {shlex.quote(script)}"
     assert "container" not in workspace
