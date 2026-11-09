@@ -2,11 +2,13 @@
 # `user:` and `workdir:`, which is applied to every pane of the workspace.
 env:
   DEPLOY_TAG: "8443"
+locals:
+  deploy_tag: "8443"
 workspaces:
   - name: frontend
     container:
       type: podman
-      name: "web-${DEPLOY_TAG}"
+      name: "web-${deploy_tag}"
       workdir: /srv/web
     tabs:
       - label: server
@@ -15,7 +17,7 @@ workspaces:
         panes:
           - {}
       - label: logs
-        container: "podman@web-${DEPLOY_TAG}"
+        container: "podman@web-${deploy_tag}"
         panes:
           - commands:
               - tail -f /tmp/app.log

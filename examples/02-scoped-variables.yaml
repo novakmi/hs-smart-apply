@@ -1,8 +1,8 @@
-# Values are declared in the layout; the process environment is not consulted.
+# Env values can expand references from the process environment and other env entries.
 workspaces:
   - name: web-app
     env:
-      PROJECT_ROOT: "~/code/my-company/web-app"
+      PROJECT_ROOT: "${HOME}/code/my-company/web-app"
       NODE_ENV: ${NODE_ENV:-development}
     root: "$PROJECT_ROOT"
     locals:

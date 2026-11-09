@@ -1,12 +1,14 @@
 # `container:` is inherited by descendant panes; a nearer declaration replaces
 # the inherited one entirely (type and name do not merge). Its values are
-# expanded like any layout string, so inherited `env:` values work in it.
+# Env exports and pane setup commands run inside the selected container shell.
 # Pane commands run inside the container and end with an interactive shell there.
 env:
   PROJECT_TAG: "v2"
+locals:
+  project_tag: v2
 workspaces:
   - name: backend
-    container: "docker@backend-${PROJECT_TAG}"
+    container: "docker@backend-${project_tag}"
     locals:
       START_COMMAND: npm run start
     tabs:

@@ -1,5 +1,5 @@
 # LXC/LXD containers: commands run via `lxc exec` (interactive by default).
-# `container:` inherits to descendant panes; `user:` is docker/podman only.
+# `container:` inherits to descendant panes; LXC `user:` runs through sudo.
 workspaces:
   - name: ops
     container: "lxc@db-admin"
