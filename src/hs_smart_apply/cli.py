@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -347,7 +348,7 @@ def process_node(
 
     result: dict[str, Any] = {}
     for key, value in node.items():
-        if key in ("commands", "commands_after_clear", "locals", "container", "env", "clear"):
+        if key in ("commands", "commands_after_clear", "locals", "container", "env", "clear", "workspace-action"):
             continue
         result[key] = process_node(
             value,
@@ -387,6 +388,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--session",
         help="Apply the layout to this named Herdr session (defaults to Herdr's selected/default session).",
     )
+    parser.add_argument("--workspace-action", choices=("add", "keep", "delete", "replace"))
+    parser.add_argument(
+        "--workspace",
+        action="append",
+        dest="workspace_names",
+        metavar="NAME",
+        help="Workspace name to target; repeat to select multiple. Defaults to names in the YAML.",
+    )
     parser.add_argument("layout", type=Path, help="Path to the layout YAML file.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("-p", "--print", action="store_true", help="Print expanded YAML and exit.")
@@ -410,12 +419,88 @@ def _dump_layout(data: Any, stream: Any) -> None:
     yaml.dump(data, stream, Dumper=_LayoutDumper, sort_keys=False)
 
 
+def _selected_workspace_names(data: Any, selected: list[str] | None, *, require_yaml_names: bool = True) -> list[str]:
+    workspaces = data.get("workspaces", []) if isinstance(data, dict) else []
+    yaml_names = [w["name"] for w in workspaces if isinstance(w, dict) and isinstance(w.get("name"), str)]
+    names = selected if selected else yaml_names
+    missing = set(names) - set(yaml_names)
+    if missing and selected and require_yaml_names:
+        raise ValueError(f"selected workspace(s) missing from YAML: {', '.join(sorted(missing))}")
+    return list(dict.fromkeys(names))
+
+
+def _workspace_actions(data: Any, override: str | None) -> dict[str, str]:
+    if not isinstance(data, dict):
+        return {}
+    default_action = data.get("workspace-action", "add")
+    valid = {"add", "keep", "delete", "replace"}
+    if not isinstance(default_action, str) or default_action not in valid:
+        raise ValueError("top-level workspace-action must be add, keep, delete, or replace")
+    actions = {}
+    for workspace in data.get("workspaces", []):
+        if not isinstance(workspace, dict) or not isinstance(workspace.get("name"), str):
+            continue
+        action = override or workspace.get("workspace-action", default_action)
+        if not isinstance(action, str) or action not in valid:
+            raise ValueError(f"invalid workspace-action for {workspace['name']!r}")
+        actions[workspace["name"]] = action
+    return actions
+
+
+def _list_workspaces(env: dict[str, str]) -> list[dict[str, Any]]:
+    snapshot_result = subprocess.run(["herdr", "api", "snapshot"], capture_output=True, text=True, check=False, env=env)
+    if snapshot_result.returncode:
+        raise RuntimeError(snapshot_result.stderr.strip() or "Herdr workspace query failed")
+    try:
+        return json.loads(snapshot_result.stdout)["result"]["snapshot"]["workspaces"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"unable to read Herdr workspace list: {exc}") from exc
+
+
+def _close_named_workspaces(names: list[str], env: dict[str, str], action: str) -> int:
+    if not names:
+        return 0
+    try:
+        workspaces = _list_workspaces(env)
+    except RuntimeError as exc:
+        print(f"hs-smart-apply: {exc}", file=sys.stderr)
+        return 1
+    ids = [w["workspace_id"] for w in workspaces if w.get("label") in names]
+    for workspace_id in ids:
+        label = next(w["label"] for w in workspaces if w.get("workspace_id") == workspace_id)
+        print(f"{action.capitalize()} workspace: {label}")
+        result = subprocess.run(["herdr", "workspace", "close", workspace_id], check=False, env=env)
+        if result.returncode:
+            return result.returncode
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         with args.layout.open(encoding="utf-8") as layout_file:
             data = yaml.safe_load(layout_file)
         expanded = process_node(data, dict(os.environ), {})
+        actions = _workspace_actions(data, args.workspace_action)
+        names = _selected_workspace_names(
+            data,
+            args.workspace_names,
+            require_yaml_names=not all(action == "delete" for action in actions.values()),
+        )
+        default_action = data.get("workspace-action", "add") if isinstance(data, dict) else "add"
+        actions = {name: actions.get(name, args.workspace_action or default_action) for name in names}
+        if isinstance(expanded, dict) and "workspaces" in expanded:
+            expanded["workspaces"] = [
+                workspace
+                for workspace in expanded.get("workspaces", [])
+                if isinstance(workspace, dict)
+                and (
+                    workspace.get("name") in args.workspace_names
+                    if args.workspace_names
+                    else workspace.get("name") is None or actions.get(workspace.get("name")) != "delete"
+                )
+                and actions.get(workspace.get("name")) != "delete"
+            ]
     except (OSError, yaml.YAMLError, ValueError) as exc:
         print(f"hs-smart-apply: {exc}", file=sys.stderr)
         return 1
@@ -426,9 +511,6 @@ def main(argv: list[str] | None = None) -> int:
 
     tmp_name: str | None = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", encoding="utf-8", delete=False) as tmp:
-            _dump_layout(expanded, tmp)
-            tmp_name = tmp.name
         apply_env = dict(os.environ)
         if args.session:
             config_dir = Path(apply_env.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "herdr"
@@ -438,9 +520,37 @@ def main(argv: list[str] | None = None) -> int:
                 else config_dir / "sessions" / args.session / "herdr.sock"
             )
             apply_env["HERDR_SOCKET_PATH"] = str(socket_path)
+        if "keep" in actions.values():
+            existing = {workspace.get("label") for workspace in _list_workspaces(apply_env)}
+            added_names = [name for name in names if actions[name] != "keep" or name not in existing]
+            if isinstance(expanded, dict):
+                expanded["workspaces"] = [
+                    workspace
+                    for workspace in expanded.get("workspaces", [])
+                    if isinstance(workspace, dict) and workspace.get("name") in added_names
+                ]
+            for name in names:
+                if actions[name] == "keep" and name in existing:
+                    print(f"Keeping existing workspace: {name}")
+            names = added_names
+        to_close = [name for name in actions if actions[name] in ("delete", "replace")]
+        if to_close:
+            close_status = _close_named_workspaces(to_close, apply_env, "Deleting")
+            if close_status:
+                return close_status
+        names = [name for name in names if actions[name] != "delete"]
+        if not names and isinstance(data, dict) and "workspaces" in data:
+            print("No workspaces to add.")
+            return 0
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", encoding="utf-8", delete=False) as tmp:
+            _dump_layout(expanded, tmp)
+            tmp_name = tmp.name
+        for name in names:
+            verb = "Adding replacement for" if actions[name] == "replace" else "Adding"
+            print(f"{verb} workspace: {name}")
         completed = subprocess.run(["herdr-spreader", "apply", "--file", tmp_name], check=False, env=apply_env)
         return completed.returncode
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         print(f"hs-smart-apply: {exc}", file=sys.stderr)
         return 1
     finally:

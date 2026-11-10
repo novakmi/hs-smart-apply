@@ -1,5 +1,6 @@
 """Pytest coverage for layout expansion and the command line interface."""
 
+import json
 import shlex
 from pathlib import Path
 from unittest.mock import Mock
@@ -7,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-from hs_smart_apply.cli import expand_str, main, process_node
+from hs_smart_apply.cli import _workspace_actions, build_parser, expand_str, main, process_node
 
 
 @pytest.mark.parametrize(
@@ -326,8 +327,8 @@ def test_commands_bubble_from_ancestors_to_each_pane() -> None:
 
     workspace = result["workspaces"][0]
     tab = workspace["tabs"][0]
-    assert tab["panes"][0]["command"] == 'prepare && export APP="editor" && open $APP && run'
-    assert tab["panes"][1]["command"] == 'prepare && export APP="editor" && open $APP && inspect'
+    assert tab["panes"][0]["command"] == 'export APP="editor" && prepare && open $APP && run'
+    assert tab["panes"][1]["command"] == 'export APP="editor" && prepare && open $APP && inspect'
     assert "commands" not in workspace
     assert "commands" not in tab
 
@@ -544,7 +545,7 @@ def test_apply_passes_temporary_yaml_and_returns_child_status(tmp_path, monkeypa
     layout = write_layout(tmp_path, "panes: []\n")
     observed = {}
 
-    def fake_run(command, check):
+    def fake_run(command, check, env):
         observed["command"] = command
         observed["check"] = check
         observed["yaml"] = Path(command[-1]).read_text(encoding="utf-8")
@@ -572,6 +573,92 @@ def test_apply_passes_selected_session_to_herdr(tmp_path, monkeypatch) -> None:
 
     assert main(["--session", "sysval", str(layout)]) == 0
     assert observed["env"]["HERDR_SOCKET_PATH"].endswith("/herdr/sessions/sysval/herdr.sock")
+
+
+def test_workspace_selector_is_repeatable_and_defaults_to_add() -> None:
+    args = build_parser().parse_args(["--workspace", "alpha", "--workspace", "beta", "layout.yaml"])
+    assert args.workspace_action is None
+    assert args.workspace_names == ["alpha", "beta"]
+
+
+def test_yaml_workspace_action_defaults_to_add_and_top_level_applies_to_all() -> None:
+    data = {"workspace-action": "keep", "workspaces": [{"name": "alpha"}, {"name": "beta"}]}
+    assert _workspace_actions(data, None) == {"alpha": "keep", "beta": "keep"}
+    assert _workspace_actions({"workspaces": [{"name": "alpha"}]}, None) == {"alpha": "add"}
+
+
+def test_workspace_yaml_action_overrides_top_level_and_cli_overrides_yaml() -> None:
+    data = {
+        "workspace-action": "keep",
+        "workspaces": [{"name": "alpha", "workspace-action": "delete"}, {"name": "beta"}],
+    }
+    assert _workspace_actions(data, None) == {"alpha": "delete", "beta": "keep"}
+    assert _workspace_actions(data, "replace") == {"alpha": "replace", "beta": "replace"}
+
+
+def test_workspace_selector_does_not_reapply_yaml_workspace_marked_delete(tmp_path, capsys) -> None:
+    layout = write_layout(
+        tmp_path,
+        "workspaces:\n  - name: remove-me\n    workspace-action: delete\n  - name: add-me\n",
+    )
+
+    assert main(["--workspace", "remove-me", "--workspace", "add-me", "--print", str(layout)]) == 0
+    expanded = yaml.safe_load(capsys.readouterr().out)
+    assert [workspace["name"] for workspace in expanded["workspaces"]] == ["add-me"]
+
+
+def test_keep_applies_only_yaml_workspaces_missing_from_session(tmp_path, monkeypatch, capsys) -> None:
+    layout = write_layout(
+        tmp_path,
+        "workspaces:\n  - name: existing\n  - name: new-one\n  - name: new-two\n",
+    )
+    observed = {}
+
+    def fake_run(command, check=False, env=None, capture_output=False, text=False):
+        if command == ["herdr", "api", "snapshot"]:
+            return Mock(
+                returncode=0,
+                stdout=json.dumps(
+                    {"result": {"snapshot": {"workspaces": [{"label": "existing", "workspace_id": "w1"}]}}}
+                ),
+                stderr="",
+            )
+        observed["yaml"] = yaml.safe_load(Path(command[-1]).read_text(encoding="utf-8"))
+        return Mock(returncode=0)
+
+    monkeypatch.setattr("hs_smart_apply.cli.subprocess.run", fake_run)
+
+    assert main(["--workspace-action", "keep", str(layout)]) == 0
+    assert [workspace["name"] for workspace in observed["yaml"]["workspaces"]] == ["new-one", "new-two"]
+    assert "Keeping existing workspace: existing" in capsys.readouterr().out
+
+
+def test_keep_does_not_apply_when_all_workspaces_exist(tmp_path, monkeypatch, capsys) -> None:
+    layout = write_layout(tmp_path, "workspaces:\n  - name: existing\n")
+
+    def fake_run(command, check=False, env=None, capture_output=False, text=False):
+        assert command == ["herdr", "api", "snapshot"]
+        return Mock(
+            returncode=0,
+            stdout=json.dumps({"result": {"snapshot": {"workspaces": [{"label": "existing", "workspace_id": "w1"}]}}}),
+            stderr="",
+        )
+
+    monkeypatch.setattr("hs_smart_apply.cli.subprocess.run", fake_run)
+
+    assert main(["--workspace-action", "keep", str(layout)]) == 0
+    assert "No workspaces to add" in capsys.readouterr().out
+
+
+def test_keep_reports_herdr_snapshot_failure_cleanly(tmp_path, monkeypatch, capsys) -> None:
+    layout = write_layout(tmp_path, "workspace-action: keep\nworkspaces:\n  - name: candidate\n")
+    monkeypatch.setattr(
+        "hs_smart_apply.cli.subprocess.run",
+        Mock(return_value=Mock(returncode=1, stderr="Herdr is not running")),
+    )
+
+    assert main([str(layout)]) == 1
+    assert "Herdr is not running" in capsys.readouterr().err
 
 
 def test_missing_layout_reports_error(tmp_path, capsys) -> None:

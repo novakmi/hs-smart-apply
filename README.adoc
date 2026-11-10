@@ -106,12 +106,39 @@ available on `PATH`.
 ----
 hs-smart-apply layout.yaml
 hs-smart-apply --session sysval layout.yaml
+hs-smart-apply --workspace-action keep layout.yaml
+hs-smart-apply --workspace-action replace --workspace api --workspace worker layout.yaml
 ----
 
 * `-h`, `--help`: show help and exit.
 * `--version`: print the installed version and exit.
 * `--session NAME`: apply to the named Herdr session. If omitted, Herdr uses
   its `HERDR_SESSION` setting or the default session.
+* `--workspace-action {add,keep,delete,replace}`: choose what to do with
+  workspace definitions. The default is `add`; YAML can also set a default
+  `workspace-action:` at the top level and override it on individual
+  workspaces. An explicitly supplied CLI option overrides YAML actions for all
+  selected workspaces. `keep` adds only YAML workspaces whose names do not
+  already exist in the selected session. Duplicate YAML workspace names are
+  rejected by Herdr.
+* `--workspace NAME`: select a workspace name; repeat the option to select
+  several. If omitted, names come from the YAML. `delete` removes matching
+  existing workspace names; `replace` closes those workspaces before applying
+  their YAML definitions. `add` applies the selected YAML definitions.
+
+For example, set a top-level action for all workspaces and override it for one:
+
+[source,yaml]
+----
+workspace-action: keep
+workspaces:
+  - name: api
+  - name: worker
+    workspace-action: replace
+----
+
+Here `api` is added only if missing, while `worker` is replaced. The
+`workspace-action:` metadata is removed before the layout is passed to Herdr.
 * `-p`, `--print`: print the expanded YAML and exit.
 * `-d`, `--dry-run`: print the expanded YAML without running
   `herdr-spreader apply`.
@@ -156,6 +183,8 @@ at this level or an ancestor. Unless a field is marked required, it may be
 omitted. hs-smart-apply removes its preprocessing fields (`env:`, `locals:`,
 `commands:`, `commands_after_clear:`, `clear:`, and `container:`) from the
 expanded YAML and converts them into pane commands or container execution.
+`workspace-action:` controls how each workspace is applied and is also removed
+before Herdr receives the layout.
 Other fields pass through to Herdr-spreader for validation and application.
 
 === Top level
@@ -171,6 +200,7 @@ Other fields pass through to Herdr-spreader for validation and application.
 | `clear:` | boolean | `false` | Clear each descendant pane after setup; inherited and overridable below.
 | `commands_after_clear:` | list of strings | `[]` | Commands run after the optional clear; inherited and accumulated below, and still run when `clear: false`.
 | `container:` | string or mapping | unset | Container execution inherited by descendants. See Container fields below.
+| `workspace-action:` | `add`, `keep`, `delete`, or `replace` | `add` | Default operation for every workspace; a workspace-level value overrides it. An explicit CLI `--workspace-action` overrides YAML values.
 |===
 
 === Workspace
@@ -182,6 +212,7 @@ Other fields pass through to Herdr-spreader for validation and application.
 | `name:` | string | Herdr default | Workspace name; also used as a fallback container name.
 | `root:` | string/path | Herdr default | Workspace root directory.
 | `tabs:` | list of mappings | `[]` | Tab definitions.
+| `workspace-action:` | `add`, `keep`, `delete`, or `replace` | top-level value, otherwise `add` | Operation for this workspace; overrides the top-level value.
 | `env:`, `locals:`, `commands:`, `clear:`, `commands_after_clear:`, `container:` | Same types as top level | Inherited/default above | Override or extend settings for this workspace and its descendants. `commands_after_clear:` still runs when clearing is disabled.
 |===
 
