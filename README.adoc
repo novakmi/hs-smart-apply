@@ -15,15 +15,25 @@ toc::[]
 
 * *Hierarchical environment scoping*: inherit and override values with `env:`
   blocks at supported layout levels.
-* *Shared runtime environment*: top-level `env:` declarations are automatically
-  copied into every workspace's environment. Workspace values override shared
-  values, without YAML anchors or merges.
-* *Global and hierarchical `locals:`*: define reusable values that can refer to
-  system environment variables, `env:` values, and earlier locals.
-* *Variable and path expansion*: expand `~`, `$NAME`, `${NAME}`, and
-  `${NAME:-default}` in layout strings.
+* *Shared runtime environment*: `env:` declarations become shell exports in
+  each pane command. Parent values run first; workspace, tab, and pane values
+  override them later.
+* *Global and hierarchical `locals:`*: define reusable values that recursively
+  expand other locals in the same or parent nodes. Cyclic references report an
+  error. Env references to other declared env values resolve recursively into
+  those exports. Shell variables such as `$HOME` expand when pane commands run.
+* *Variable and path expansion*: expand `~` and local references while
+  preparing layout fields. Environment exports run in the pane shell, including
+  inside containers, so `$HOME` uses that shell's home directory.
 * *Command bubbling*: combine `commands:` lists from workspaces, tabs, and panes
   into each pane's `command`, joined with `&&`.
+* *Clean pane startup*: set `clear: true` at the top level, workspace, tab, or
+  pane to clear each affected pane after setup; descendants inherit it and can
+  disable it with `clear: false`. Add `commands_after_clear:` at those levels
+  to run inherited commands after the optional clear, including in containers.
+* *Container panes*: declare `container:` on a pane (or inherit it like `env:`)
+  to run its commands inside an `lxc`, `docker`, or `podman` container and end
+  in an interactive shell there.
 * *Preview options*: use `--print` to inspect expanded YAML or `--dry-run` to
   print it without invoking `herdr-spreader`.
 
@@ -38,12 +48,45 @@ cd hs-smart-apply
 python -m pip install .
 ----
 
-For development, install the checkout in editable mode so changes are used
-immediately:
+For development, create and activate a virtual environment, then install the
+checkout and its test, lint, and type-check tools. `pytest`, `ruff`, and `ty`
+are development tools, so `python -m pip install -e .` by itself does not
+install them:
 
 [source,shell]
 ----
-python -m pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e . pytest ruff ty
+----
+
+=== Running tests and checks
+
+Run these commands from the project root with the virtual environment
+activated:
+
+[source,shell]
+----
+python -m pytest
+ruff format --check .
+ruff check .
+ty check .
+----
+
+Run one test file or select tests by name with pytest:
+
+[source,shell]
+----
+python -m pytest tests/test_hs_smart_apply.py
+python -m pytest -k clear
+----
+
+To apply Ruff formatting and automatic lint fixes:
+
+[source,shell]
+----
+ruff format .
+ruff check . --fix
 ----
 
 You can also install directly from the repository:
@@ -78,59 +121,162 @@ python -m hs_smart_apply --print layout.yaml
 ----
 
 For a direct source checkout without installing the package, run from the
-project root:
+project root with Python 3.12 or newer and PyYAML available in that Python
+environment:
 
 [source,shell]
 ----
-python -m pip install PyYAML
-PYTHONPATH=src python -m hs_smart_apply --print layout.yaml
+PYTHONPATH=src python -m hs_smart_apply --print examples/05-container.yaml
+PYTHONPATH=src python -m hs_smart_apply --dry-run layout.yaml
+PYTHONPATH=src python -m hs_smart_apply layout.yaml
 ----
+
+These commands run the code from the checkout, so they let you preview or
+apply changes that are not yet in an installed release. `--print` and
+`--dry-run` only display the expanded layout; the final command applies it to
+the active Herdr session and also requires `herdr-spreader` on `PATH`.
+When invoking it outside the project directory, set `PYTHONPATH` to the
+checkout's `src/` directory and pass the module name (not the directory) to
+`-m`:
+
+[source,shell]
+----
+PYTHONPATH="$HOME/vol/src/projects/hs-smart-apply/src" \
+  python3 -m hs_smart_apply "$HOME/vol/cn/tailf/herdr/sysval.yaml"
+----
+
+== YAML reference
+
+The tables list the fields understood by hs-smart-apply and the common
+Herdr layout structure. Fields marked *inherited* use the nearest declaration
+at this level or an ancestor. Unless a field is marked required, it may be
+omitted. hs-smart-apply removes its preprocessing fields (`env:`, `locals:`,
+`commands:`, `commands_after_clear:`, `clear:`, and `container:`) from the
+expanded YAML and converts them into pane commands or container execution.
+Other fields pass through to Herdr-spreader for validation and application.
+
+=== Top level
+
+[cols="1,1,1,3",options="header"]
+|===
+| Element | Type | Default | Purpose
+
+| `workspaces:` | list of mappings | required by the standard Herdr layout | Workspace definitions.
+| `env:` | mapping of shell variable names to values | `{}` | Shared runtime exports inherited by workspaces, tabs, and panes.
+| `locals:` | mapping of names to values | `{}` | Preprocessing values inherited by descendants; recursively expanded from other locals.
+| `commands:` | list of strings or `{commands: string}` mappings | `[]` | Setup commands run in every descendant pane before `clear`.
+| `clear:` | boolean | `false` | Clear each descendant pane after setup; inherited and overridable below.
+| `commands_after_clear:` | list of strings | `[]` | Commands run after the optional clear; inherited and accumulated below, and still run when `clear: false`.
+| `container:` | string or mapping | unset | Container execution inherited by descendants. See Container fields below.
+|===
+
+=== Workspace
+
+[cols="1,1,1,3",options="header"]
+|===
+| Element | Type | Default | Purpose
+
+| `name:` | string | Herdr default | Workspace name; also used as a fallback container name.
+| `root:` | string/path | Herdr default | Workspace root directory.
+| `tabs:` | list of mappings | `[]` | Tab definitions.
+| `env:`, `locals:`, `commands:`, `clear:`, `commands_after_clear:`, `container:` | Same types as top level | Inherited/default above | Override or extend settings for this workspace and its descendants. `commands_after_clear:` still runs when clearing is disabled.
+|===
+
+=== Tab
+
+[cols="1,1,1,3",options="header"]
+|===
+| Element | Type | Default | Purpose
+
+| `label:` | string | Herdr default | Tab label; also used as a fallback container name.
+| `cwd:` | string/path | Herdr default | Tab working directory.
+| `panes:` | list of mappings | `[]` | Pane definitions.
+| `env:`, `locals:`, `commands:`, `clear:`, `commands_after_clear:`, `container:` | Same types as top level | Inherited/default above | Override or extend settings for this tab and its panes. `commands_after_clear:` still runs when clearing is disabled.
+|===
+
+=== Pane
+
+[cols="1,1,1,3",options="header"]
+|===
+| Element | Type | Default | Purpose
+
+| `split:` | string | Herdr default | Split direction for this pane, such as `right` or `down`.
+| `ratio:` | number | Herdr default | Requested size ratio for the split.
+| `command:` | string | unset | Native Herdr command. Use `commands:` for commands that should combine with inherited setup.
+| `focus:` | boolean | `false` | Whether Herdr should focus this pane.
+| `env:`, `locals:`, `commands:`, `clear:`, `commands_after_clear:`, `container:` | Same types as top level | Inherited/default above | Pane-level values. `clear: false` disables inherited clearing for this pane, but does not disable `commands_after_clear:`.
+|===
+
+=== Container fields
+
+`container:` accepts either a compact string or a mapping. Container settings
+inherit as a whole; a child declaration replaces the parent declaration.
+
+[cols="1,1,1,3",options="header"]
+|===
+| Element | Type | Default | Purpose
+
+| Compact form | `lxc@name`, `docker@name`, or `podman@name` string | unset | Select container type and name.
+| `type:` | string: `lxc`, `docker`, or `podman` | required in mapping form | Container runtime.
+| `name:` | string | nearest `name:` or `label:` ancestor | Container instance name.
+| `user:` | string | runtime default user | User to run the pane shell as.
+| `workdir:` | string/path | container default directory | Directory entered before pane commands.
+|===
+
+The preprocessor fields accept these types: `env:` and `locals:` are mappings;
+`commands:` and `commands_after_clear:` are lists; `clear:` is a boolean; and
+`container:` is one of the forms above. Environment values are exported in
+each pane shell (including inside containers), while locals are used only
+while preprocessing. Setup runs in this order: `commands:`, optional `clear`,
+then `commands_after_clear:`. The latter commands run even when `clear: false`.
 
 == Example layout
 
-Top-level `env:` values are available both for expansion and in the generated
-workspace environments, so programs launched in pane shells inherit them.
-Only variables declared in the layout are copied; the preprocessor's process
-environment remains available for expansion without being copied wholesale.
-`locals:` values are used only for expansion. The top-level `env:` block itself
-is removed from the generated YAML because Spreader expects it on workspaces.
+`locals:` values are recursively expanded against other `locals:` in the same
+or parent nodes. A local may refer to a later local; cyclic references produce
+an error that shows the cycle. `env:` values become `export` commands on every
+pane. References to other env values resolve recursively; shell references
+such as `$HOME` expand when those commands run. Cyclic env references report
+an error. Container panes run the exports inside the container shell, where
+`$HOME` is the container user's home. `locals:` values are used only for
+preprocessing and resolve against other locals, not env. Generated YAML has no
+`env:` fields.
 
-This example uses process environment variables, global and workspace locals,
-command lists, and a container command. Complete examples are also in the
-link:examples/[`examples/` directory].
+Exports are placed in every pane command because Herdr does not reliably
+inherit workspace env into split panes. This also runs the exports in the
+right shell context for container panes.
+
+This example uses global scope, workspace locals, command bubbling, and a
+`container:` declaration that sends the pane's commands into a docker
+container and leaves an interactive shell running there. Complete examples are
+also in the link:examples/[`examples/` directory].
 
 [source,yaml]
 ----
 env:
   PROJECT_TAG: "v2.4"
-  USER_HOME: "${HOME}"
+  APP_ROOT: "${HOME}/projects/my-company"
 
 locals:
-  base_dir: "${USER_HOME}/projects/my-company"
-  primary_container: "app-core-${PROJECT_TAG}"
-  default_shell: bash
+  project_tag: "v2.4"
+  primary_container: "app-core-${project_tag}"
 
 workspaces:
   - name: Backend-Service
-    root: "${base_dir}/backend"
-    locals:
-      app_port: "8080"
+    root: "$APP_ROOT/backend"
     tabs:
       - label: Terminal & Container
         panes:
           - commands:
-              - "echo 'Starting service on port ${app_port}...'"
+              - "echo 'Starting service...'"
               - "cargo watch -x run"
             focus: true
           - split: right
             ratio: 0.4
+            container: docker@$primary_container
             commands:
-              - |
-                docker exec -it ${primary_container} ${default_shell} << 'EOF'
-                  cd /app
-                  echo "Inside container! Working dir: $(pwd)"
-                  exec bash
-                EOF
+              - "cd /app"
+              - "echo \"Inside container! Working dir: $(pwd)\""
 ----
 
 == Managing different herdr sessions

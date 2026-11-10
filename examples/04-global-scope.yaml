@@ -1,12 +1,11 @@
-# Shared declarations are exported to each workspace's runtime environment.
+# Shared declarations are exported in every pane command.
 env:
-  APP_ROOT: "$HOME/code/my-app"
+  APP_ROOT: "${HOME}/code/my-app"
+  API_DIR: "${APP_ROOT}/services/api"
   NODE_ENV: ${NODE_ENV:-development}
-locals:
-  API_DIR: "$APP_ROOT/services/api"
 workspaces:
   - name: api
-    root: "$API_DIR"
+    root: "${API_DIR}"
     commands:
       - echo "Launching API in $NODE_ENV mode"
     tabs:

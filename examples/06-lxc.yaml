@@ -1,0 +1,16 @@
+# LXC/LXD containers: commands run via `lxc exec` (interactive by default).
+# `container:` inherits to descendant panes; LXC `user:` runs through sudo.
+workspaces:
+  - name: ops
+    container: "lxc@db-admin"
+    tabs:
+      - label: database
+        commands:
+          - systemctl status postgresql
+        panes:
+          - {}
+      - label: upgrade
+        container: "lxc@db-admin-pg16"
+        panes:
+          - commands:
+              - ls /var/log/postgresql
