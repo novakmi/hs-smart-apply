@@ -278,6 +278,7 @@ def process_node(
     process_environment: dict[str, Any] | None = None,
     parent_clear: bool = False,
     parent_after_clear_commands: list[str] | None = None,
+    parent_env_commands: list[str] | None = None,
 ) -> Any:
     """Expand scopes, wrap container panes, export shared env, and bubble commands to panes."""
     if process_environment is None:
@@ -286,6 +287,7 @@ def process_node(
             parent_env = {}
     commands = list(parent_commands or [])
     after_clear_commands = list(parent_after_clear_commands or [])
+    env_commands = list(parent_env_commands or [])
     if isinstance(node, list):
         processed = []
         for index, item in enumerate(node):
@@ -302,6 +304,7 @@ def process_node(
                     process_environment=process_environment,
                     parent_clear=parent_clear,
                     parent_after_clear_commands=after_clear_commands,
+                    parent_env_commands=env_commands,
                 )
             )
         return processed
@@ -330,7 +333,7 @@ def process_node(
         for variable in raw_env:
             if not isinstance(variable, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable):
                 raise ValueError(f"invalid environment variable name {variable!r} at {where}")
-            commands.append(f"export {variable}={_shell_double_quote(shell_env[variable])}")
+            env_commands.append(f"export {variable}={_shell_double_quote(shell_env[variable])}")
 
     names = list(parent_names or [])
     own_name = node.get("name")
@@ -358,10 +361,12 @@ def process_node(
             process_environment=process_environment,
             parent_clear=clear,
             parent_after_clear_commands=after_clear_commands,
+            parent_env_commands=env_commands,
         )
 
     if any(key in node for key in ("panes", "tabs", "workspaces")):
         return result
+    commands = [*env_commands, *commands]
     if clear:
         commands.append("clear")
     commands.extend(after_clear_commands)
