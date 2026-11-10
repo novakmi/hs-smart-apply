@@ -105,10 +105,13 @@ available on `PATH`.
 [source,shell]
 ----
 hs-smart-apply layout.yaml
+hs-smart-apply --session sysval layout.yaml
 ----
 
 * `-h`, `--help`: show help and exit.
 * `--version`: print the installed version and exit.
+* `--session NAME`: apply to the named Herdr session. If omitted, Herdr uses
+  its `HERDR_SESSION` setting or the default session.
 * `-p`, `--print`: print the expanded YAML and exit.
 * `-d`, `--dry-run`: print the expanded YAML without running
   `herdr-spreader apply`.
@@ -281,9 +284,10 @@ workspaces:
 
 == Managing different herdr sessions
 
-`herdr-spreader` applies layouts to the active Herdr session. If you use
-multiple named sessions, you can add a helper function to your shell profile
-(`~/.bashrc` or `~/.zshrc`) to attach to a session and apply a layout:
+`--session` selects the target session for one invocation by setting
+`HERDR_SOCKET_PATH` for the `herdr-spreader apply` subprocess.
+If you prefer a shell helper, you can add this function to your profile
+(`~/.bashrc` or `~/.zshrc`):
 
 [source,shell]
 ----
@@ -296,8 +300,7 @@ hs-apply-to() {
         return 1
     fi
 
-    herdr session attach "$session"
-    hs-smart-apply "$layout"
+    hs-smart-apply --session "$session" "$layout"
 }
 ----
 

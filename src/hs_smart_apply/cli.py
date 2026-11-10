@@ -383,6 +383,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="hs-smart-apply", description="Expand scoped variables and commands in a herdr-spreader YAML layout."
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--session",
+        help="Apply the layout to this named Herdr session (defaults to Herdr's selected/default session).",
+    )
     parser.add_argument("layout", type=Path, help="Path to the layout YAML file.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("-p", "--print", action="store_true", help="Print expanded YAML and exit.")
@@ -425,7 +429,16 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", encoding="utf-8", delete=False) as tmp:
             _dump_layout(expanded, tmp)
             tmp_name = tmp.name
-        completed = subprocess.run(["herdr-spreader", "apply", "--file", tmp_name], check=False)
+        apply_env = dict(os.environ)
+        if args.session:
+            config_dir = Path(apply_env.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "herdr"
+            socket_path = (
+                config_dir / "herdr.sock"
+                if args.session == "default"
+                else config_dir / "sessions" / args.session / "herdr.sock"
+            )
+            apply_env["HERDR_SOCKET_PATH"] = str(socket_path)
+        completed = subprocess.run(["herdr-spreader", "apply", "--file", tmp_name], check=False, env=apply_env)
         return completed.returncode
     except OSError as exc:
         print(f"hs-smart-apply: {exc}", file=sys.stderr)

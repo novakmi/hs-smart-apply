@@ -560,6 +560,20 @@ def test_apply_passes_temporary_yaml_and_returns_child_status(tmp_path, monkeypa
     assert not observed["temp_path"].exists()
 
 
+def test_apply_passes_selected_session_to_herdr(tmp_path, monkeypatch) -> None:
+    layout = write_layout(tmp_path, "panes: []\n")
+    observed = {}
+
+    def fake_run(command, check, env):
+        observed["env"] = env
+        return Mock(returncode=0)
+
+    monkeypatch.setattr("hs_smart_apply.cli.subprocess.run", fake_run)
+
+    assert main(["--session", "sysval", str(layout)]) == 0
+    assert observed["env"]["HERDR_SOCKET_PATH"].endswith("/herdr/sessions/sysval/herdr.sock")
+
+
 def test_missing_layout_reports_error(tmp_path, capsys) -> None:
     assert main([str(tmp_path / "missing.yaml")]) == 1
     assert "hs-smart-apply:" in capsys.readouterr().err
@@ -597,6 +611,7 @@ def test_help_lists_supported_cli_options(capsys) -> None:
     output = capsys.readouterr().out
     assert "--print" in output
     assert "--dry-run" in output
+    assert "--session" in output
 
 
 def test_version_option_prints_package_version(capsys) -> None:
