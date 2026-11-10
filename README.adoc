@@ -48,12 +48,45 @@ cd hs-smart-apply
 python -m pip install .
 ----
 
-For development, install the checkout in editable mode so changes are used
-immediately:
+For development, create and activate a virtual environment, then install the
+checkout and its test, lint, and type-check tools. `pytest`, `ruff`, and `ty`
+are development tools, so `python -m pip install -e .` by itself does not
+install them:
 
 [source,shell]
 ----
-python -m pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e . pytest ruff ty
+----
+
+=== Running tests and checks
+
+Run these commands from the project root with the virtual environment
+activated:
+
+[source,shell]
+----
+python -m pytest
+ruff format --check .
+ruff check .
+ty check .
+----
+
+Run one test file or select tests by name with pytest:
+
+[source,shell]
+----
+python -m pytest tests/test_hs_smart_apply.py
+python -m pytest -k clear
+----
+
+To apply Ruff formatting and automatic lint fixes:
+
+[source,shell]
+----
+ruff format .
+ruff check . --fix
 ----
 
 You can also install directly from the repository:

@@ -496,7 +496,11 @@ def test_print_mode_preserves_host_shell_refs_in_env_exports(tmp_path, capsys, m
     monkeypatch.setenv("HOME", "/home/tester")
     layout = write_layout(
         tmp_path,
-        "env:\n  ROOT: '${HOME}/project'\n  APP: '${ROOT}/app'\nworkspaces:\n  - env:\n      CACHE: '${APP}/cache'\n    panes:\n      - {}\n",
+        (
+            "env:\n  ROOT: '${HOME}/project'\n  APP: '${ROOT}/app'\n"
+            "workspaces:\n  - env:\n      CACHE: '${APP}/cache'\n"
+            "    panes:\n      - {}\n"
+        ),
     )
 
     assert main(["--print", str(layout)]) == 0
@@ -510,7 +514,11 @@ def test_print_mode_preserves_host_shell_refs_in_env_exports(tmp_path, capsys, m
 def test_print_mode_exports_shared_environment_to_workspaces(tmp_path, capsys) -> None:
     layout = write_layout(
         tmp_path,
-        "env:\n  MODE: shared\nworkspaces:\n  - name: api\n    env:\n      MODE: api\n    panes:\n      - {}\n  - name: worker\n    panes:\n      - {}\n",
+        (
+            "env:\n  MODE: shared\nworkspaces:\n"
+            "  - name: api\n    env:\n      MODE: api\n    panes:\n      - {}\n"
+            "  - name: worker\n    panes:\n      - {}\n"
+        ),
     )
 
     assert main(["--print", str(layout)]) == 0

@@ -74,12 +74,8 @@ Ready to contribute? Here's how to set up hs-smart-apply for local development.
    git clone git@github.com:your_name_here/hs-smart-apply.git
    ```
 
-3. Install your local copy with uv:
-
-   ```sh
-   cd hs-smart-apply/
-   uv sync
-   ```
+3. Follow the editable install and local checks in the README's
+   [development section](README.adoc#running-tests-and-checks).
 
 4. Create a branch for local development:
 
@@ -89,21 +85,7 @@ Ready to contribute? Here's how to set up hs-smart-apply for local development.
 
    Now you can make your changes locally.
 
-5. When you're done making changes, verify formatting, linting, types, and tests without modifying files:
-
-   ```sh
-   just check
-   ```
-
-   Use `just fix` to apply Ruff's automatic fixes, or `just fix-and-check` to apply them before verification.
-
-   Or run the tests alone:
-
-   ```sh
-   just test
-   ```
-
-6. Commit your changes and push your branch to GitHub:
+5. Commit your changes and push your branch to GitHub:
 
    ```sh
    git add .
@@ -111,7 +93,7 @@ Ready to contribute? Here's how to set up hs-smart-apply for local development.
    git push origin name-of-your-bugfix-or-feature
    ```
 
-7. Submit a pull request through the GitHub website.
+6. Submit a pull request through the GitHub website.
 
 ## Pull Request Guidelines
 
